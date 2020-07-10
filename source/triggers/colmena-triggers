@@ -1,0 +1,46 @@
+#!/bin/sh
+
+# This file is part of colmena security project
+# Copyright (C) 2010-2020, Mario Rodriguez < colmena (at) bambusoft.com >
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+
+IAM=$(whoami)
+PLUGINS="/usr/share/colmena/triggers/plugins.d"
+COLMENA_LOG="/var/log/colmena/colmena.log"
+
+if [ ${IAM} != "root" ]; then
+	/usr/bin/echo "You must be root to use this utility"
+	exit 1
+fi
+
+if [ ! -f $COLMENA_LOG ]; then
+	/usr/bin/touch $COLMENA_LOG
+	/usr/bin/chmod 660 $COLMENA_LOG
+fi
+
+TODAY=$(/usr/bin/date)
+/usr/bin/echo "$TODAY Running trggers" >> $COLMENA_LOG
+
+run_plugins () {
+    if [ -d ${PLUGINS} ]; then
+	for f in ${PLUGINS}/*.sh; do
+		$f ${2} ${3} ${4} | /usr/bin/node /usr/share/colmena/triggers/collector.js ${2} ${3} ${4}
+		/usr/bin/echo "$f => $?" >> $COLMENA_LOG
+	done
+    fi
+}
+
+case $1 in
+start)
+    run_plugins ${2} ${3} ${4}
+    ;;
+*)
+    echo "Usage: ${0} (start [ --test | --rotated | --quit ])"
+    ;;
+esac
+
+exit 0

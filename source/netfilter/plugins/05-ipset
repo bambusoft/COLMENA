@@ -1,0 +1,87 @@
+#!/bin/sh
+
+# This file is part of colmena
+# Copyright (C) 2010-2020 Mario Rodriguez <colmena (at) bambusoft.com>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation, version 3
+# of the License.
+
+set -e
+
+COLMENA_LOG="/var/log/colmena/colmena.log"
+rc=0
+
+if [ $? -ne 0 ]; then
+	rc=1
+fi
+
+reinit_ipset()
+{
+	if [ -f /sbin/ipset ]; then
+		if [ "$rc" -ne 1 ]; then
+			echo "- Reinitializing ipset blacklists" | tee -a $COLMENA_LOG
+			# ipv4
+			/sbin/ipset destroy BLACKLIST_IP -q 2>&1 | tee -a $COLMENA_LOG
+			/sbin/ipset create BLACKLIST_IP hash:ip hashsize 2048 -q 2>&1 | tee -a $COLMENA_LOG
+			/sbin/ipset flush BLACKLIST_IP 2>&1 | tee -a $COLMENA_LOG
+			/sbin/ipset destroy BLACKLIST_NET -q 2>&1 | tee -a $COLMENA_LOG
+			/sbin/ipset create BLACKLIST_NET hash:net hashsize 1024 -q 2>&1 | tee -a $COLMENA_LOG
+			/sbin/ipset flush BLACKLIST_NET 2>&1 | tee -a $COLMENA_LOG
+			/sbin/ipset add BLACKLIST_IP 64.139.139.20 2>&1 | tee -a $COLMENA_LOG
+			/sbin/ipset add BLACKLIST_NET 64.139.139.20/28 2>&1 | tee -a $COLMENA_LOG
+			# ipv6
+			/sbin/ipset destroy BLACKLIST_IP6 -q 2>&1 | tee -a $COLMENA_LOG
+			/sbin/ipset create BLACKLIST_IP6 hash:ip family inet6 hashsize 2048 -q 2>&1 | tee -a $COLMENA_LOG
+			/sbin/ipset flush BLACKLIST_IP6 2>&1 | tee -a $COLMENA_LOG
+			/sbin/ipset destroy BLACKLIST_NET6 -q 2>&1 | tee -a $COLMENA_LOG
+			/sbin/ipset create BLACKLIST_NET6 hash:net family inet6 hashsize 1024 -q 2>&1 | tee -a $COLMENA_LOG
+			/sbin/ipset flush BLACKLIST_NET6 2>&1 | tee -a $COLMENA_LOG
+			/sbin/ipset add BLACKLIST_IP6 2a04:4e42::81 2>&1 | tee -a $COLMENA_LOG
+		fi
+	fi
+}
+
+save_ipset()
+{
+	if [ -f /sbin/ipset ]; then
+		if [ "$rc" -ne 1 ]; then
+			if [ -d /etc/colmena ]; then
+				echo "- Saving ipset lists" | tee -a $COLMENA_LOG
+				/sbin/ipset list > /etc/colmena/ipset.list 2>&1 | tee -a $COLMENA_LOG
+			else
+				echo "- Missing /etc/colmena directory" | tee -a $COLMENA_LOG
+				rc=1
+			fi
+		fi
+	fi
+}
+
+case "$1" in
+start|restart|reload|force-reload|force-start)
+	reinit_ipset
+	;;
+save)
+	save_ipset
+	;;
+stop)
+	# Why? because if stop is used, the firewall gets flushed for a variable
+	# amount of time during package upgrades, leaving the machine vulnerable
+	# It's also not always desirable to flush during purge
+	echo "Automatic ipset flushing disabled, use \"flush\" instead of \"stop\""
+	;;
+flush)
+	reinit_ipset
+	;;
+status)
+	echo "Checking ipset service" | tee -a $COLMENA_LOG
+	/sbin/ipset -v 2>&1 | tee -a $COLMENA_LOG
+	;;
+*)
+    echo "Usage: $0 {start|restart|reload|force-reload|save|flush}" >&2
+    exit 1
+    ;;
+esac
+
+exit $rc

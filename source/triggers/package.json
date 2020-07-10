@@ -1,0 +1,14 @@
+{
+  "name": "colmena-triggers",
+  "version": "1.0.0",
+  "description": "Recollect missbehaved ips using shell triggers",
+  "main": "collector.js",
+  "scripts": {
+    "test": "echo 'Error: no test specified' && exit 1"
+  },
+  "author": "Mario Rodriguez",
+  "license": "GPL-3.0",
+  "bin": {
+   "parser": "./parser.js"
+ }
+}

@@ -1,5 +1,5 @@
 # COLMENA
-This script is designed to protect a group of devices like bees protect their hives. If a server block a misbehaved IP the entire group blocks that IP too.
+This script is designed to protect a group of servers like bees protect their hives. If a server block a misbehaved IP the entire group blocks that IP too.
 
 IMPORTANT: Is not a goal of this project to provide "bullet proof" server security is intended to enhance your server basic security.
 

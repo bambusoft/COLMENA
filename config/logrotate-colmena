@@ -1,0 +1,10 @@
+/var/log/colmena/colmena.log {
+	su %%USR%% %%GRP%%
+    weekly
+    rotate 4
+    compress
+	notifempty
+    delaycompress
+    missingok
+    create 640 %%USR%% %%GRP%%
+}
