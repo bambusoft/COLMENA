@@ -1,21 +1,38 @@
 #!/usr/bin/env bash
 
+# ================================================
 # This file is part of colmena security project
-# Copyright (C) 2010-2020, Mario Rodriguez <colmena (at) bambusoft.com>
-# 
+# Copyright (C) 2010-2022, Mario Rodriguez < colmena (at) bambusoft.com >
+#
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
 # as published by the Free Software Foundation, either version 3
 # of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# OS VERSIONS tested:
+#	Ubuntu 18.04 32bit and 64bit
+#	Ubuntu 20.04 64bit
+#
+#  Official website: http://colmena.bambusoft.com
 
 . /lib/lsb/init-functions
 COLMENA_VER="1.0.0"
 COLMENA_CFG="/etc/colmena"
 COLMENA_LOG="/var/log/colmena/colmena.log"
+COLMENA_USR="/usr/share/colmena"
 NFP_BIN="/usr/sbin/netfilter-persistent"
 SYS_LOG="/var/log/syslog"
 F2B_BIN="/etc/init.d/fail2ban"
 F2B_LOG="/var/log/fail2ban.log"
+F2B_JAI="/var/log/fail2ban.jails"
 IPS_BIN=$(which ipset)
 IP4_BIN=$(which iptables)
 IP6_BIN=$(which ip6tables)
@@ -23,6 +40,8 @@ IP4_RES="$IP4_BIN-restore"
 IP6_RES="$IP6_BIN-restore"
 GRP_BIN=$(which grep)
 LSF_BIN=$(which lsof)
+PSAD_BIN=$(which psad)
+PSAD_LOG="/var/log/psad"
 
 if [ "$UID" -ne 0 ]; then
 	echo "Execution failed: you must be logged in as 'root' or have sudo privileges"
@@ -46,6 +65,13 @@ ctask() {
 	echo "Result: $?" >> $COLMENA_LOG
 }
 
+flush_fail2ban() {
+	echo "Flushing failure manager rules"
+	CANT=$(/usr/bin/fail2ban-client unban --all)
+	echo "$CANT rules flushed"
+	sleep 5
+}
+
 ensure_f2b_stop() {
 	x=$(ps -ef | grep fail2ban-server | grep -v grep | awk '{print $2}' | wc -l)
 	while [ $x -ge 1 ]
@@ -57,37 +83,88 @@ ensure_f2b_stop() {
 		done
 }
 
-case "$1" in
-start|force-start)
-	# $1=action_msg, $2=log_msg, $3=script $4=argument
-	ctask "Loading colmena firewall manager" "netfilter" $NFP_BIN $1
-	ctask "Loading colmena failure manager" "fail2ban" $F2B_BIN $1
-	;;
-restore)
-	ctask "Stopping colmena failure manager" "fail2ban" $F2B_BIN stop
+jail_status() {
+	#echo "Waiting for service fail manager to start"
+	sleep 3
+	/usr/bin/fail2ban-client status > $F2B_JAI
+	/usr/bin/chown root:adm $F2B_JAI
+	/usr/bin/chmod 644 $F2B_JAI
+}
+
+list_one_set() {
+	# $1=setname, $2=string
+	IsInSet=$($IPS_BIN list $1 | grep -F $2)
+	if [ -n "$IsInSet" ]; then
+		echo "$1"
+		echo "$IsInSet"
+	fi
+}
+
+list_sets() {
+	echo -e "Listing ip sets\n- Calling $IPS_BIN list" >> $COLMENA_LOG
+	$IPS_BIN list | egrep "(Name|Number)"
+}
+
+run_triggers_blockers() {
+	if [ -d "$COLMENA_USR" ]; then
+		echo "Refreshing sets"
+		$COLMENA_USR/triggers/colmena-triggers start --quiet >> $COLMENA_LOG 2>&1
+		if [ -f /bin/node ]; then
+			/bin/node $COLMENA_USR/blockers/stinger.js | $COLMENA_USR/blockers/venom.sh
+		fi
+	else
+		echo "Colmena bee must be instaled to use all ip sets capability"
+	fi
+	list_sets
+}
+
+restore_iptables() {
 	echo -e "Restoring iptables\n- Calling $IPT_RES < iptables_rules" >> $COLMENA_LOG
 	$IP4_RES < $COLMENA_CFG/iptables.firewall.rules
 	$IP6_RES < $COLMENA_CFG/ip6tables.firewall.rules
 	ctask "Saving colmena rules and sets" "netfilter" $NFP_BIN save
+}
+
+case "$1" in
+start|force-start)
+	# $1=action_msg, $2=log_msg, $3=script $4=argument
+	restore_iptables
+	ctask "Loading colmena firewall manager" "netfilter" $NFP_BIN $1
+	ctask "Loading colmena failure manager" "fail2ban" $F2B_BIN $1
+	jail_status
+	service knockd $1
+	service psad $1
+	run_triggers_blockers
+	;;
+restore)
+	flush_fail2ban
+	ctask "Stopping colmena failure manager" "fail2ban" $F2B_BIN stop
+	ensure_f2b_stop
+	restore_iptables
 	ctask "Loading colmena failure manager" "fail2ban" $F2B_BIN start
+	jail_status
 	;;
 restart|reload|force-reload)
 	# $1=action_msg, $2=log_msg, $3=script $4=argument
 	ctask "Loading colmena firewall manager" "netfilter" $NFP_BIN $1
+	flush_fail2ban
 	ensure_f2b_stop
 	ctask "Loading colmena failure manager" "fail2ban" $F2B_BIN start
+	jail_status
+	service knockd $1
+	service psad $1
+	run_triggers_blockers
 	;;
 list-set)
-	echo -e "Listing ip sets\n- Calling $IPS_BIN list" >> $COLMENA_LOG
-	$IPS_BIN list
+	list_sets
 	;;
 list-ban)
 	echo -e "Showing fail2ban log\n- Calling cat $F2B_LOG" >> $COLMENA_LOG
-	cat $F2B_LOG
+	egrep "\bBan"  $F2B_LOG | sed -e 's@fail.*\[@\[@g'
 	;;
 list-blocked)
 	echo -e "Showing syslog iptables denied\n- Calling $GRP_BIN colmena $SYS_LOG" >> $COLMENA_LOG
-	$GRP_BIN "colmena" $SYS_LOG
+	$GRP_BIN "\bcolmena\b" $SYS_LOG | egrep -v "(CRON|node)" | sed -e 's@kernel:.*SRC=@blocked @g' | sed -e 's@ DST=.*DPT=@ PORT @g' | sed -e 's@WIN.*$@@' | sed -e 's@LEN.*$@@'
 	;;
 list-ports)
 	echo -e "Showing ports\n- Calling lsof -i -P -n " >> $COLMENA_LOG
@@ -98,59 +175,192 @@ list-rules)
 	$IP4_BIN -L
 	$IP6_BIN -L
 	;;
+list-scan)
+	$PSAD_BIN -S
+	;;
+add)
+	LIST=${2^^}
+	IP=$3
+	PROTO=${4,,}
+	PORT=$5
+	TIMEOUT=$6
+	OK="false"
+	if [ "$LIST" == "BL" ] && [[ -n "$IP" ]]; then
+		SETNAME="BLACKLIST_"
+		PROTO=""
+		EXTRA=""
+		OK="true"
+	fi
+	if [ "$LIST" == "WL" ] && [[ -n "$IP" ]] && [ -n "$PORT" ]; then
+		SETNAME="WHITELIST_"
+		if [ "$PROTO" != "udp" ]; then
+			PROTO="tcp"
+		fi
+		if [ -z "$TIMEOUT" ]; then
+			TIMEOUT=3600
+		fi
+		EXTRA=",${PROTO}:$PORT timeout $TIMEOUT"
+		OK="true"
+	fi
+	if [ "$OK" == "false" ]; then
+		echo "Please provide BL IP or WL IP PROTO PORT TIMEOUT"
+		exit 1
+	else
+		if [[ $IP =~ .*:.* ]]; then
+			SETNAME="${SETNAME}IP6"
+			$IPS_BIN -exist del BLACKLIST_IP6 ${IP}
+			WLITEM=$($IPS_BIN list WHITELIST_IP6 | /usr/bin/grep timeout | /bin/grep $IP | sed -e 's/ timeout.*//')
+			if [ -n "$WLITEM" ]; then
+				$IPS_BIN -exist del WHITELIST_IP6 $WLITEM
+			fi
+		else
+			SETNAME="${SETNAME}IP"
+			$IPS_BIN -exist del BLACKLIST_IP ${IP}
+			WLITEM=$($IPS_BIN list WHITELIST_IP | /usr/bin/grep timeout | /bin/grep $IP | sed -e 's/ timeout.*//')
+			if [ -n "$WLITEM" ]; then
+				$IPS_BIN -exist del WHITELIST_IP $WLITEM
+			fi
+		fi
+		echo "Adding $IP to $SETNAME set [${EXTRA}]"
+		$IPS_BIN add $SETNAME ${IP}${EXTRA}
+	fi
+	;;
+getuserip)
+	CUSER=$(who am i | awk '{print $1}')
+	USER_IP=$(last | grep "$CUSER" | head -1 | sed -e 's@.*  pts/.\s*@@' | sed -e 's@\s.*$@@')
+	if [ -n "$USER_IP" ]; then
+		echo "$USER_IP"
+	fi
+	;;
+userip)
+	CUSER=$(who am i | awk '{print $1}')
+	USER_IP=$(last | grep "$CUSER" | head -1 | sed -e 's@.*  pts/.\s*@@' | sed -e 's@\s.*$@@')
+	if [ -n "$USER_IP" ]; then
+		echo "Current user $USER IP: $USER_IP"
+		IS_BAN_IGNORED=$(grep "$USER_IP" /etc/fail2ban/jail.local)
+		if [ -z "$IS_BAN_IGNORED" ]; then
+			echo "This ip can be blocked by colmena failure manager"
+		else
+			echo "This ip can not be blocked by colmena failure manager"
+			echo "$IS_BAN_IGNORED"
+		fi
+		IS_IN_BLACK_LIST=$(cat $F2B_LOG | grep -F "$USER_IP" | head -1 | sed -e 's@.*\[@@' | sed -e 's@\]@@')
+		if [ -n "$IS_IN_BLACK_LIST" ]; then
+			echo "Was/is blocked by the failure manager jail $IS_IN_BLACK_LIST"
+		fi
+		IS_IN_BLACK_SET=$($IPS_BIN list | grep -F "$USER_IP")
+		if [ -n "$IS_IN_BLACK_SET" ]; then
+			echo "Is blocked by the set manager"
+		fi
+		IS_DETECTED_BY_PSAD=$(ls -1 $PSAD_LOG | grep -F "$USER_IP")
+		if [ -n "$IS_DETECTED_BY_PSAD" ]; then
+			cat $PSAD_LOG/$USER_IP/*_email_alert | egrep -v "(=|^$)"
+		fi
+	else
+		echo "Unable to get user ip from user $CUSER"
+	fi
+	;;
+refresh)
+	run_triggers_blockers
+	;;
 save)
 	ctask "Saving colmena rules and sets" "netfilter" $NFP_BIN save
+	jail_status
 	;;
 stop)
-	ctask "Stopping colmena failure manager" "fail2ban" $F2B_BIN stop
-	ctask "Stopping colmena firewall manager" "netfilter" $NFP_BIN stop
+	flush_fail2ban
+	ctask "Stopping colmena failure manager" "fail2ban" $F2B_BIN $1
+	ensure_f2b_stop
+	ctask "Stopping colmena firewall manager" "netfilter" $NFP_BIN flush
+	service knockd $1
+	service psad $1
+	$IPS_BIN flush
 	;;
 find)
 	if [ -n "$2" ]; then
 		echo "F2B"
 		echo "---"
-		cat $F2B_LOG | grep $2
+		cat $F2B_LOG | grep -F $2 | egrep -v "Ignore"
 		echo "IPS"
 		echo "---"
-		$IPS_BIN list | grep $2
+		list_one_set "BLACKLIST_IP" $2
+		list_one_set "BLACKLIST_IP6" $2
+		list_one_set "BLACKLIST_NET" $2
+		list_one_set "BLACKLIST_NET6" $2
+		list_one_set "SCANNED_PORTS4" $2
+		list_one_set "SCANNED_PORTS6" $2
+		list_one_set "WHITELIST_IP" $2
+		list_one_set "WHITELIST_IP6" $2
+		echo "PSAD"
+		echo "---"
+		IS_DETECTED_BY_PSAD=$(ls -1 $PSAD_LOG | grep "\b$2\b")
+		if [ -n "$IS_DETECTED_BY_PSAD" ]; then
+			if [ -f $PSAD_LOG/$2/*_email_alert ]; then
+				cat $PSAD_LOG/$2/*_email_alert | egrep -v "(=|^$)"
+				else echo "$IS_DETECTED_BY_PSAD"
+			fi
+		fi
 	fi
 	;;
 remove)
 	if [ -n "$2" ]; then
 		# Remove iptables rule for first ip ocurrence
-		JAIL=$(cat $F2B_LOG | grep "Ban $2" | egrep -v Restore | head -1 | sed -e "s@^.*\[@@" | sed -e "s@\].*@@")
+		JAIL=$(cat $F2B_LOG | grep -F "Ban $2" | egrep -v Restore | head -1 | sed -e "s@^.*\[@@" | sed -e "s@\].*@@")
 		if [ -n "$JAIL" ]; then
 			fail2ban-client set "$JAIL" unbanip "$2"
 			echo "IP $2 removed from jail $JAIL"
 		else
-			echo "IP not found"
+			echo "IP not found in any jail"
 		fi
-		# Remove ipset rule
-		IPv4=$(/usr/bin/expr index "$2" .)
-		if [ "$IPv4" -gt 0 ]; then
-			NET4=$(/usr/bin/expr index "$2" /)
-			if [ "$NET4" -gt 0 ]; then
-				$IPS_BIN del BLACKLIST_NET $2
-				echo "IP $2 removed from BLACKLIST_NET"
-			else
-				$IPS_BIN del BLACKLIST_IP $2
-				echo "IP $2 removed from BLACKLIST_IP"
+		IPinSet=$($IPS_BIN list | /usr/bin/grep "$2")
+		if [ -n "$IPinSet" ]; then
+			# Remove ipset rule
+			IPv4=$(/usr/bin/expr index "$2" .)
+			if [ "$IPv4" -gt 0 ]; then
+				NET4=$(/usr/bin/expr index "$2" /)
+				if [ "$NET4" -gt 0 ]; then
+					$IPS_BIN del BLACKLIST_NET $2
+					echo "IP $2 removed from BLACKLIST_NET"
+				else
+					$IPS_BIN del BLACKLIST_IP $2
+					echo "IP $2 removed from BLACKLIST_IP"
+					WLITEM=$($IPS_BIN list WHITELIST_IP | /usr/bin/grep timeout | /bin/grep $2 | sed -e 's/ timeout.*//')
+					if [ -n "$WLITEM" ]; then
+						$IPS_BIN -exist del WHITELIST_IP $WLITEM
+					fi
+				fi
 			fi
-		fi
-		IPv6=$(/usr/bin/expr index "$2" :)
-		if [ "$IPv6" -gt 0 ]; then
-			NET6=$(/usr/bin/expr index "$2" /)
-			if [ "$NET6" -gt 0 ]; then
-				$IPS_BIN del BLACKLIST_NET6 $2
-				echo "IP $2 removed from BLACKLIST_NET6"
-			else
-				$IPS_BIN del BLACKLIST_IP6 $2
-				echo "IP $2 removed from BLACKLIST_IP6"
+			IPv6=$(/usr/bin/expr index "$2" :)
+			if [ "$IPv6" -gt 0 ]; then
+				NET6=$(/usr/bin/expr index "$2" /)
+				if [ "$NET6" -gt 0 ]; then
+					$IPS_BIN del BLACKLIST_NET6 $2
+					echo "IP $2 removed from BLACKLIST_NET6"
+				else
+					$IPS_BIN del BLACKLIST_IP6 $2
+					echo "IP $2 removed from BLACKLIST_IP6"
+					WLITEM=$($IPS_BIN list WHITELIST_IP6 | /usr/bin/grep timeout | /bin/grep $2 | sed -e 's/ timeout.*//')
+					if [ -n "$WLITEM" ]; then
+						$IPS_BIN -exist del WHITELIST_IP6 $WLITEM
+						echo "IP $2 removed from WHITELIST_IP6"
+					fi
+				fi
 			fi
+		else
+			echo "IP not found in any set"
 		fi
 	else
 		echo "Please provide a valid IP"
 	fi
+	;;
+dump)
+	egrep -v database $COLMENA_CFG/colmena.db.cfg > .def
+	nice -n 12 mysqldump --defaults-extra-file=.def --no-tablespaces colmena > colmena-db.sql
+	rm -f .def
+	nice -n 15 tar -cJf colmena-db.tar.xz colmena-db.sql
+	TEMP=$(grep "admin.*=" "$COLMENA_CFG/colmena.db.cfg")
+	ADMIN_GRP=$(cut -d'=' -f2 <<<"$TEMP")
+	chown root:$ADMIN_GRP colmena-db.*
 	;;
 flush)
 	ctask "Flushing colmena firewall manager" "netfilter" $NFP_BIN flush
@@ -158,12 +368,18 @@ flush)
 status)
 	ctask "Showing colmena firewall manager status" "netfilter" $NFP_BIN status
 	ctask "Showing colmena failure manager status" "fail2ban" $F2B_BIN "status | grep Active"
+	cat $F2B_JAI
+	STATUS=$(service knockd status | grep "Active:" | head -1)
+	echo "knockd state: $STATUS"
+	STATUS=$($PSAD_BIN -S | grep "Running" | head -1)
+	echo "psad state: $STATUS"
+	jail_status
 	;;
 version)
-	echo "Colmena v$COLMENA_VER"
+	echo "Colmena v$COLMENA_VER by Mario Rodriguez Somohano colmena@bambusoft.com"
 	;;
 *)
-    echo "Usage: $0 {start|restart|reload|force-reload|force-restart|restore|save|flush|stop|status|list-set|list-ban|list-blocked|list-ports|list-rules|find|remove}" >&2
+    echo "Usage: $0 {start|restart|reload|force-reload|force-restart|restore|save|flush|stop|status|list-set|list-ban|list-blocked|list-ports|list-rules|list-scan|refresh|getuserip|userip|add|find|remove|dump|version}" >&2
     exit 1
     ;;
 esac

@@ -1,57 +1,116 @@
 #!/bin/sh
 
-# This file is part of colmena
-# Copyright (C) 2010-2020 Mario Rodriguez <colmena (at) bambusoft.com>
+# ================================================
+# This file is part of colmena security project
+# Copyright (C) 2010-2022, Mario Rodriguez < colmena (at) bambusoft.com >
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation, version 3
-# of the License.
+# as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# OS VERSIONS tested:
+#	Ubuntu 18.04 32bit and 64bit
+#	Ubuntu 20.04 64bit
+#
+#  Official website: http://colmena.bambusoft.com
 
-set -e
-
-COLMENA_LOG="/var/log/colmena/colmena.log"
+#set -e
 rc=0
+quiet='-q'
 
-if [ $? -ne 0 ]; then
+if [ "$?" -ne 0 ]; then
 	rc=1
 fi
 
 reinit_ipset()
 {
-	if [ -f /sbin/ipset ]; then
+	if [ -f "/usr/sbin/ipset" ]; then
 		if [ "$rc" -ne 1 ]; then
-			echo "- Reinitializing ipset blacklists" | tee -a $COLMENA_LOG
 			# ipv4
-			/sbin/ipset destroy BLACKLIST_IP -q 2>&1 | tee -a $COLMENA_LOG
-			/sbin/ipset create BLACKLIST_IP hash:ip hashsize 2048 -q 2>&1 | tee -a $COLMENA_LOG
-			/sbin/ipset flush BLACKLIST_IP 2>&1 | tee -a $COLMENA_LOG
-			/sbin/ipset destroy BLACKLIST_NET -q 2>&1 | tee -a $COLMENA_LOG
-			/sbin/ipset create BLACKLIST_NET hash:net hashsize 1024 -q 2>&1 | tee -a $COLMENA_LOG
-			/sbin/ipset flush BLACKLIST_NET 2>&1 | tee -a $COLMENA_LOG
-			/sbin/ipset add BLACKLIST_IP 64.139.139.20 2>&1 | tee -a $COLMENA_LOG
-			/sbin/ipset add BLACKLIST_NET 64.139.139.20/28 2>&1 | tee -a $COLMENA_LOG
+			echo "- Reinitializing ipset IPv4 blacklists"
+			BLIP4_EXIST=$(/usr/sbin/ipset list | /usr/bin/grep "BLACKLIST_IP\b")
+			if [ -n "$BLIP4_EXIST" ]; then
+				/usr/sbin/ipset destroy BLACKLIST_IP $quiet 2>&1
+			fi
+			/usr/sbin/ipset create BLACKLIST_IP hash:ip hashsize 2048 $quiet 2>&1
+			/usr/sbin/ipset flush BLACKLIST_IP 2>&1
+			echo "- Reinitializing ipset IPv4 network blacklists"
+			BLNT4_EXIST=$(/usr/sbin/ipset list | /usr/bin/grep "BLACKLIST_NET\b")
+			if [ -n "$BLNT4_EXIST" ]; then
+				/usr/sbin/ipset destroy BLACKLIST_NET $quiet 2>&1
+			fi
+			/usr/sbin/ipset create BLACKLIST_NET hash:net hashsize 1024 $quiet 2>&1
+			/usr/sbin/ipset flush BLACKLIST_NET 2>&1
+			/usr/sbin/ipset add BLACKLIST_IP 64.139.139.20 2>&1
+			/usr/sbin/ipset add BLACKLIST_NET 64.139.139.20/28 2>&1
 			# ipv6
-			/sbin/ipset destroy BLACKLIST_IP6 -q 2>&1 | tee -a $COLMENA_LOG
-			/sbin/ipset create BLACKLIST_IP6 hash:ip family inet6 hashsize 2048 -q 2>&1 | tee -a $COLMENA_LOG
-			/sbin/ipset flush BLACKLIST_IP6 2>&1 | tee -a $COLMENA_LOG
-			/sbin/ipset destroy BLACKLIST_NET6 -q 2>&1 | tee -a $COLMENA_LOG
-			/sbin/ipset create BLACKLIST_NET6 hash:net family inet6 hashsize 1024 -q 2>&1 | tee -a $COLMENA_LOG
-			/sbin/ipset flush BLACKLIST_NET6 2>&1 | tee -a $COLMENA_LOG
-			/sbin/ipset add BLACKLIST_IP6 2a04:4e42::81 2>&1 | tee -a $COLMENA_LOG
+			echo "- Reinitializing ipset IPv6 blacklist"
+			BLIP6_EXIST=$(/usr/sbin/ipset list | /usr/bin/grep "BLACKLIST_IP6")
+			if [ -n "$BLIP6_EXIST" ]; then
+				/usr/sbin/ipset destroy BLACKLIST_IP6 $quiet 2>&1
+			fi
+			/usr/sbin/ipset create BLACKLIST_IP6 hash:ip family inet6 hashsize 2048 $quiet 2>&1
+			/usr/sbin/ipset flush BLACKLIST_IP6 2>&1
+			echo "- Reinitializing ipset IPv6 network blacklist"
+			BLNT6_EXIST=$(/usr/sbin/ipset list | /usr/bin/grep "BLACKLIST_NET6")
+			if [ -n "$BLNT6_EXIST" ]; then
+				/usr/sbin/ipset destroy BLACKLIST_NET6 $quiet 2>&1
+			fi
+			/usr/sbin/ipset create BLACKLIST_NET6 hash:net family inet6 hashsize 1024 $quiet 2>&1
+			/usr/sbin/ipset flush BLACKLIST_NET6 2>&1
+			/usr/sbin/ipset add BLACKLIST_IP6 2a04:4e42::81 2>&1
+			# Scanned Ports
+			echo "- Reinitializing ipset IPv4 scanning ports blacklist"
+			SCNP4_EXIST=$(/usr/sbin/ipset list | /usr/bin/grep "SCANNED_PORTS4")
+			if [ -n "$SCNP4_EXIST" ]; then
+				/usr/sbin/ipset destroy SCANNED_PORTS4 $quiet 2>&1
+			fi
+			/usr/sbin/ipset create SCANNED_PORTS4 hash:ip,port family inet hashsize 32768 maxelem 65536 timeout 60 $quiet 2>&1
+			/usr/sbin/ipset flush SCANNED_PORTS4 2>&1
+			echo "- Reinitializing ipset IPv6 scanning ports blacklist"
+			SCNP6_EXIST=$(/usr/sbin/ipset list | /usr/bin/grep "SCANNED_PORTS6")
+			if [ -n "$SCNP6_EXIST" ]; then
+				/usr/sbin/ipset destroy SCANNED_PORTS6 $quiet 2>&1
+			fi
+			/usr/sbin/ipset create SCANNED_PORTS6 hash:ip,port family inet6 hashsize 32768 maxelem 65536 timeout 60 $quiet 2>&1
+			/usr/sbin/ipset flush SCANNED_PORTS6 2>&1
+			# White Lists
+			echo "- Reinitializing ipset IPv4 whitelist"
+			WLIP4_EXIST=$(/usr/sbin/ipset list | /usr/bin/grep "WHITELIST_IP\b")
+			if [ -n "$WLIP4_EXIST" ]; then
+				/usr/sbin/ipset destroy WLACKLIST_IP $quiet 2>&1
+			fi
+			/usr/sbin/ipset create WHITELIST_IP hash:ip,port family inet hashsize 2048 maxelem 65536 timeout 60 $quiet 2>&1
+			/usr/sbin/ipset flush WHITELIST_IP 2>&1
+			echo "- Reinitializing ipset IPv6 whitelist"
+			WLIP6_EXIST=$(/usr/sbin/ipset list | /usr/bin/grep "WHITELIST_IP6")
+			if [ -n "$WLIP6_EXIST" ]; then
+				/usr/sbin/ipset destroy WHITELIST_IP6 $quiet 2>&1
+			fi
+			/usr/sbin/ipset create WHITELIST_IP6 hash:ip,port family inet6 hashsize 2048 maxelem 65536 timeout 60 $quiet 2>&1
+			/usr/sbin/ipset flush WHITELIST_IP6 2>&1
 		fi
 	fi
 }
 
 save_ipset()
 {
-	if [ -f /sbin/ipset ]; then
+	if [ -f "/usr/sbin/ipset" ]; then
 		if [ "$rc" -ne 1 ]; then
 			if [ -d /etc/colmena ]; then
-				echo "- Saving ipset lists" | tee -a $COLMENA_LOG
-				/sbin/ipset list > /etc/colmena/ipset.list 2>&1 | tee -a $COLMENA_LOG
+				echo "- Saving ipset lists"
+				/usr/sbin/ipset list > /etc/colmena/ipset.list 2>&1
 			else
-				echo "- Missing /etc/colmena directory" | tee -a $COLMENA_LOG
+				echo "- Missing /etc/colmena directory"
 				rc=1
 			fi
 		fi
@@ -75,8 +134,8 @@ flush)
 	reinit_ipset
 	;;
 status)
-	echo "Checking ipset service" | tee -a $COLMENA_LOG
-	/sbin/ipset -v 2>&1 | tee -a $COLMENA_LOG
+	echo "Checking ipset service"
+	/usr/sbin/ipset -v 2>&1
 	;;
 *)
     echo "Usage: $0 {start|restart|reload|force-reload|save|flush}" >&2

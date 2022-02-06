@@ -1,15 +1,32 @@
 #!/bin/sh
 
+# Colmena Triggers
+# ================================================
 # This file is part of colmena security project
-# Copyright (C) 2010-2020, Mario Rodriguez < colmena (at) bambusoft.com >
+# Copyright (C) 2010-2022, Mario Rodriguez < colmena (at) bambusoft.com >
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
 # as published by the Free Software Foundation, either version 3
 # of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# OS VERSIONS tested:
+#	Ubuntu 18.04 32bit and 64bit
+#	Ubuntu 20.04 64bit
+#
+#  Official website: http://colmena.bambusoft.com
 
 IAM=$(whoami)
 PLUGINS="/usr/share/colmena/triggers/plugins.d"
+HELPERS="/usr/share/colmena/triggers/helpers.d"
 COLMENA_LOG="/var/log/colmena/colmena.log"
 
 if [ ${IAM} != "root" ]; then
@@ -34,9 +51,20 @@ run_plugins () {
     fi
 }
 
+run_helpers () {
+    if [ -d ${HELPERS} ]; then
+	for f in ${HELPERS}/*.sh; do
+		prog=$(echo $f | sed -e 's@\.sh@@')
+		$f | /usr/bin/node $prog.js
+		/usr/bin/echo "$f => $?" >> $COLMENA_LOG
+	done
+    fi
+}
+
 case $1 in
 start)
     run_plugins ${2} ${3} ${4}
+	run_helpers
     ;;
 *)
     echo "Usage: ${0} (start [ --test | --rotated | --quit ])"

@@ -18,10 +18,11 @@ COMMIT
 # Drop all invalid packets
 -A INPUT -m state --state INVALID -j DROP
 
+# Allow whitelisted ip sets
+-A INPUT -m set --match-set WHITELIST_IP src,dst -j ACCEPT
+
 # Block unwanted IPs/Nets via ipset
-#-A INPUT -m set --match-set BLACKLIST_IP src -j LOG --log-prefix "colmena ip4 denied: " --log-level 7
 -A INPUT -m set --match-set BLACKLIST_IP src -j REJECT --reject-with icmp-host-prohibited
-#-A INPUT -m set --match-set BLACKLIST_NET src -j LOG --log-prefix "colmena net denied: " --log-level 7
 -A INPUT -m set --match-set BLACKLIST_NET src -j REJECT --reject-with icmp-net-prohibited
 
 # wireguard or tinc vpn tunnels
@@ -39,8 +40,16 @@ COMMIT
 #-A INPUT -s 198.18.0.0/15 -j DROP
 #-A INPUT -s 198.51.100.0/24 -j DROP
 #-A INPUT -s 203.0.113.0/24 -j DROP
+
+#Multicast-adresses.
 #-A INPUT -s 224.0.0.0/4 -j DROP
+#-A INPUT -d 224.0.0.0/4 -j DROP
 #-A INPUT -s 240.0.0.0/5 -j DROP
+#-A INPUT -d 240.0.0.0/5 -j DROP
+#-A INPUT -s 0.0.0.0/8 -j DROP
+#-A INPUT -d 0.0.0.0/8 -j DROP
+#-A INPUT -d 239.255.255.0/24 -j DROP
+#-A INPUT -d 255.255.255.255 -j DROP
 
 # MYSQL
 #-A INPUT -p tcp -m tcp -s %%SERVERIP4%% --dport 3306 -j ACCEPT
@@ -73,6 +82,7 @@ COMMIT
 # SMTP
 #-A INPUT -p tcp --dport 25 -j ACCEPT
 #-A INPUT -p tcp --dport 465 -j ACCEPT
+#-A INPUT -p tcp --dport 587 -j ACCEPT
 #-A INPUT -p tcp --dport 2525 -j ACCEPT
 
 # POP3
@@ -81,6 +91,7 @@ COMMIT
 
 # IMAP
 #-A INPUT -p tcp --dport 143 -j ACCEPT
+#-A INPUT -p tcp --dport 993 -j ACCEPT
 
 #  Allow SSH connections
 #  The -dport number should be the same port number you set in sshd_config
@@ -98,6 +109,9 @@ COMMIT
 -A INPUT -p udp --dport 17500 -j DROP
 -A INPUT -p udp --dport 57621 -j DROP
 
+# SNMP
+#-A INPUT -p udp --dport 161:162 -j ACCEPT
+
 #  Allow ping
 -A INPUT -p icmp -m icmp --icmp-type 8 -j ACCEPT --match limit --limit 30/minute
 
@@ -112,8 +126,13 @@ COMMIT
 # -D INPUT -p udp -j REJECT --reject-with icmp-port-unreachable
 # -A INPUT -p udp -m recent --set --name UDP-PORTSCAN -j REJECT --reject-with icmp-port-unreachable
 
+# Port Scanners
+-A INPUT -m state --state NEW -m set ! --match-set SCANNED_PORTS4 src,dst -m hashlimit --hashlimit-above 1/hour --hashlimit-burst 5 --hashlimit-mode srcip --hashlimit-name portscan --hashlimit-htable-expire 7200 -j SET --add-set BLACKLIST_IP src --exist
+-A INPUT -m state --state NEW -j SET --add-set SCANNED_PORTS4 src,dst
+
 #  Log iptables denied calls
--A INPUT -m limit --limit 5/min -j LOG --log-prefix "colmena ip4 denied: " --log-level 7
+#-A INPUT -m limit --limit 5/min -j LOG --log-prefix "colmena ip4 denied: " --log-level 7
+-A INPUT -j LOG --log-prefix "colmena ip4 denied: " --log-level 7
 
 #  Reject all other inbound - default deny unless explicitly allowed policy
 -A INPUT -j REJECT

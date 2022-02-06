@@ -49,7 +49,7 @@ before = paths-debian.conf
 
 # "ignorself" specifies whether the local resp. own IP addresses should be ignored
 # (default is true). Fail2ban will not ban a host which matches such addresses.
-#ignorself = true
+ignorself = true
 
 # "ignoreip" can be a list of IP addresses, CIDR masks or DNS hosts. Fail2ban
 # will not ban a host which matches an address in this list. Several addresses
@@ -850,15 +850,15 @@ logpath = %(apache_error_log)s
 [colmena-auth]
 enabled = false
 port    = %%SSHDPORT%%
-bantime  = 10800
+bantime  = 120m
 filter  = colmena-auth
 logpath = /var/log/auth.log
 maxretry = 1
 
 [colmena-syslog]
 enabled = false
-port    = 21,22,23,25,69,110,111,135,139,445,465,995,1723,3306
-bantime  = 10800
+port    = 21,22,23,25,69,110,111,135,139,445,465,995,1723,3306,10000
+bantime  = 120m
 filter  = colmena-syslog
 logpath = /var/log/syslog
 maxretry = 1
@@ -866,7 +866,31 @@ maxretry = 1
 [colmena-nginxscan]
 enabled = false
 port    = http,https
-bantime  = 10800
+bantime  = 120m
 filter  = colmena-nginxscan
 logpath = /var/log/nginx/*.log
+maxretry = 1
+
+[colmena-dovecot]
+enabled = false
+port    = smtp,ssmtp,imap2,imaps,pop3,pop3s,2525
+bantime  = 120m
+filter  = colmena-dovecot
+logpath = /var/log/dovecot-info.log
+maxretry = 5
+
+[colmena-postfix]
+enabled = false
+port     = smtp,465,submission,2525
+bantime  = 120m
+filter  = colmena-postfix
+logpath  = /var/log/mail.log
+maxretry = 3
+
+[colmena-events]
+enabled = false
+port     = 80
+bantime  = 10800
+filter  = colmena-events
+logpath  = /var/log/colmena/events.log
 maxretry = 1

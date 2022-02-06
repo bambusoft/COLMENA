@@ -1,28 +1,27 @@
 #!/usr/bin/env bash
 # Official COLMENA global functions script
 # ================================================
+# This file is part of colmena security project
+# Copyright (C) 2010-2022, Mario Rodriguez < colmena (at) bambusoft.com >
 #
-#  This program is free software: you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
-#  the Free Software Foundation, either version 3 of the License, or
-#  (at your option) any later version.
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
 #
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
 #
-#  You should have received a copy of the GNU General Public License
-#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-#  OS VERSIONS tested:
+# OS VERSIONS tested:
 #	Ubuntu 18.04 32bit and 64bit
 #	Ubuntu 20.04 64bit
 #
 #  Official website: http://colmena.bambusoft.com
-#
-#  Author Mario Rodriguez Somohano, colmena (at) bambusoft.com
-#
 
 export FUNCTIONS_LOADED=1
 
@@ -30,7 +29,7 @@ export FUNCTIONS_LOADED=1
 # Check if the user is 'root' before allowing any modification
 if [ $UID -ne 0 ]; then
 	echo -e "$COLOR_RED Execution failed: you must be logged in as 'root' to proceed. $COLOR_END"
-	echo "Use command 'sudo -i', then enter root password and then try again."
+	echo "Login as root or try using command 'sudo -i', then enter root password and try again."
 	exit 1
 fi
 
@@ -58,6 +57,7 @@ change() {
 		chmod $1 $2 $5
 	else
 		echo "functions: change: file path not specified"
+		echo "Recived: $@"
 		exit 1
 	fi
 }
@@ -73,6 +73,8 @@ check_status() {
 	echo "fail2ban: $status"
 	status=$(/etc/init.d/knockd status | grep "Active")
 	echo "knockd: $status"
+	status=$(psad -S | grep Running | head -1)
+	echo "psad: $status"
 }
 
 save_tree() {

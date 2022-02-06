@@ -1,75 +1,108 @@
-#
-# OpenSSL configuration file.
-#
- 
-# Establish working directory.
- 
-dir						= /etc/colmena/ssl
- 
 [ ca ]
-default_ca				= CA_default
- 
+default_ca       = CA_default
+
 [ CA_default ]
-serial					= $dir/serial
-database				= $dir/certindex.txt
-unique_subject			= no
-new_certs_dir			= $dir/certs
-certificate				= $dir/certs/root-ca.pem
-private_key				= $dir/keys/root-ca.pem
-default_days			= 365
-default_bits			= 2048
-default_md				= sha256
-preserve				= no
-email_in_dn				= no
-nameopt					= default_ca
-certopt					= default_ca
-policy					= policy_match
- 
+dir					= /etc/colmena/ssl
+certs				= $dir/certs
+new_certs_dir		= $dir/certs
+crl_dir				= $dir/crl
+database			= $dir/certindex.txt
+certificate			= $dir/certs/root-ca.pem
+private_key			= $dir/keys/root-ca.pem
+serial				= $dir/serial
+crl					= $dir/crl.pem
+RANDFILE			= $dir/private/.rand
+unique_subject		= no
+default_days		= 365
+default_crl_days	= 30
+default_md			= sha256
+preserve			= no
+policy				= policy_anything
+name_opt			= CA_default
+cert_opt			= CA_default
+
+[ policy_anything ]
+countryName             = optional
+stateOrProvinceName     = optional
+localityName            = optional
+organizationName        = optional
+organizationalUnitName  = optional
+commonName              = supplied
+emailAddress            = optional
+
 [ policy_match ]
 countryName				= match
 stateOrProvinceName		= match
+localityName            = match
 organizationName		= match
 organizationalUnitName	= optional
 commonName				= supplied
 emailAddress			= optional
- 
+
 [ req ]
-default_bits			= 2048			# Size of keys
-default_keyfile			= key.pem		# name of generated keys
-default_md				= md5				# message digest algorithm
-string_mask				= nombstr		# permitted characters
-distinguished_name		= req_distinguished_name
-req_extensions			= v3_req
- 
+default_bits            = 2048
+default_md              = sha256
+default_keyfile         = privatekey.pem
+distinguished_name      = req_distinguished_name
+x509_extensions         = v3_ca
+string_mask             = nombstr
+policy					= policy_match
+
 [ req_distinguished_name ]
-# Variable name				Prompt string
-#-------------------------	  ----------------------------------
-0.organizationName			= Organization Name (company)
-organizationalUnitName		= Organizational Unit Name (department, division)
-emailAddress				= Email Address
-emailAddress_max			= 50
-localityName				= Locality Name (city, district)
-stateOrProvinceName			= State or Province Name (full name)
-countryName					= Country Name (2 letter code)
-countryName_min				= 2
-countryName_max				= 2
-commonName					= Common Name (hostname, IP, or your name)
-commonName_max				= 64
- 
+countryName             = Country Name (2 letter code)
+countryName_min         = 2
+countryName_max         = 2
+stateOrProvinceName     = State or Province Name (full name)
+localityName            = Locality Name (eg, city)
+0.organizationName      = Organization Name (eg, company)
+organizationalUnitName  = Organizational Unit Name (eg, section)
+commonName              = Common Name (eg, YOUR name)
+commonName_max          = 64
+emailAddress            = Email Address
+emailAddress_max        = 64
+req_extensions			= ssl_server
+
 # Default values for the above, for consistency and less typing.
-# Variable name				Value
-#------------------------	------------------------------
-0.organizationName_default	= Colmena Ltd
-localityName_default		= Guadalajara
-stateOrProvinceName_default	= Jalisco
-countryName_default			= MX
-commonName_default			= Your_server_name
+# Variable name					Value
+#---------------------------	------------------------------
+countryName_default				= MX
+stateOrProvinceName_default     = Jalisco
+localityName_default			= Guadalajara
+0.organizationName_default		= Colmena Ltd
+organizationalUnitName_default	= IT Colmena
+commonName_default				= %%SERVERFQDN%%
+emailAddress_default			= %%ADMIN_EMAIL%%
+
+[ usr_cert ]
+basicConstraints        = CA:FALSE
+# nsCaRevocationUrl       = https://url-to-exposed-clr-list/crl.pem
+
+[ ssl_server ]
+basicConstraints        = CA:FALSE
+nsCertType              = server
+keyUsage                = digitalSignature, keyEncipherment
+extendedKeyUsage        = serverAuth, nsSGC, msSGC
+nsComment               = "Certificate for colmena SSL Web Server"
+
+[ ssl_client ]
+basicConstraints        = CA:FALSE
+nsCertType              = client
+keyUsage                = digitalSignature, keyEncipherment
+extendedKeyUsage        = clientAuth
+nsComment               = "Certificate for colmena SSL Client"
 
 [ v3_ca ]
-basicConstraints			= CA:TRUE
-subjectKeyIdentifier		= hash
-authorityKeyIdentifier		= keyid:always,issuer:always
- 
+basicConstraints        = critical, CA:true, pathlen:0
+nsCertType              = sslCA
+keyUsage                = cRLSign, keyCertSign
+extendedKeyUsage        = serverAuth, clientAuth
+nsComment               = "Colmena CA Certificate"
+
 [ v3_req ]
-basicConstraints			= CA:FALSE
-subjectKeyIdentifier		= hash
+basicConstraints       = CA:FALSE
+keyUsage               = nonRepudiation, digitalSignature, keyEncipherment
+
+[ crl_ext ]
+basicConstraints        = CA:FALSE
+keyUsage                = digitalSignature, keyEncipherment
+nsComment               = "Colmena generated CRL"

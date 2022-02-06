@@ -16,10 +16,11 @@
 # Drop all invalid packets
 -A INPUT -m state --state INVALID -j DROP
 
+# Allow whitelisted ip sets
+-A INPUT -m set --match-set WHITELIST_IP6 src,dst -j ACCEPT
+
 # Block unwanted IPs/Nets via ipset
-#-A INPUT -m set --match-set BLACKLIST_IP6 src -j LOG --log-prefix "colmena ip6 denied: " --log-level 7
 -A INPUT -m set --match-set BLACKLIST_IP6 src -j REJECT --reject-with icmp6-adm-prohibited
-#-A INPUT -m set --match-set BLACKLIST_NET6 src -j LOG --log-prefix "colmena net denied: " --log-level 7
 -A INPUT -m set --match-set BLACKLIST_NET6 src -j REJECT --reject-with icmp6-adm-prohibited
 
 # Accept incoming and outgoing IPv6-in-IPv4 on interface eth0
@@ -56,7 +57,6 @@
 -A INPUT -p udp --dport 67:68 -j REJECT
 -A INPUT -p udp --dport 546:547 -j REJECT
 
-
 #  Allow HTTP and HTTPS connections from anywhere (the normal ports for websites and SSL).
 -A INPUT -p tcp --dport 80 -j ACCEPT
 -A INPUT -p tcp --dport 443 -j ACCEPT
@@ -67,6 +67,7 @@
 # SMTP
 #-A INPUT -p tcp --dport 25 -j ACCEPT
 #-A INPUT -p tcp --dport 465 -j ACCEPT
+#-A INPUT -p tcp --dport 587 -j ACCEPT
 #-A INPUT -p tcp --dport 2525 -j ACCEPT
 
 # POP3
@@ -75,6 +76,7 @@
 
 # IMAP
 #-A INPUT -p tcp --dport 143 -j ACCEPT
+#-A INPUT -p tcp --dport 993 -j ACCEPT
 
 #  Allow SSH connections
 #  The -dport number should be the same port number you set in sshd_config
@@ -91,6 +93,9 @@
 # Disable DropBox y Spotify
 -A INPUT -p udp --dport 17500 -j DROP
 -A INPUT -p udp --dport 57621 -j DROP
+
+# SNMP
+#-A INPUT -p udp --dport 161:162 -j ACCEPT
 
 #  Allow icmpv6
 #-A INPUT -p ipv6-icmp --icmpv6-type 128 -j ACCEPT
@@ -109,8 +114,13 @@
 # -D INPUT -p udp -j REJECT --reject-with icmp-port-unreachable
 # -A INPUT -p udp -m recent --set --name UDP-PORTSCAN -j REJECT --reject-with icmp-port-unreachable
 
+# Port Scanners
+-A INPUT -m state --state NEW -m set ! --match-set SCANNED_PORTS6 src,dst -m hashlimit --hashlimit-above 1/hour --hashlimit-burst 5 --hashlimit-mode srcip --hashlimit-name portscan --hashlimit-htable-expire 7200 -j SET --add-set BLACKLIST_IP6 src --exist
+-A INPUT -m state --state NEW -j SET --add-set SCANNED_PORTS6 src,dst
+
 #  Log iptables denied calls
--A INPUT -m limit --limit 5/min -j LOG --log-prefix "colmena ip6 denied: " --log-level 7
+#-A INPUT -m limit --limit 5/min -j LOG --log-prefix "colmena ip6 denied: " --log-level 7
+-A INPUT -j LOG --log-prefix "colmena ip6 denied: " --log-level 7
 
 #  Reject all other inbound - default deny unless explicitly allowed policy
 -A INPUT -j REJECT

@@ -2,27 +2,27 @@
 
 # Official COLMENA Trigger Script
 # ================================================
+# This file is part of colmena security project
+# Copyright (C) 2010-2022, Mario Rodriguez < colmena (at) bambusoft.com >
 #
-#  This program is free software: you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
-#  the Free Software Foundation, either version 3 of the License, or
-#  (at your option) any later version.
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
 #
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
 #
-#  You should have received a copy of the GNU General Public License
-#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-#  OS VERSIONS tested:
+# OS VERSIONS tested:
 #	Ubuntu 18.04 32bit and 64bit
 #	Ubuntu 20.04 64bit
 #
 #  Official website: http://colmena.bambusoft.com
-#
-#  Author Mario Rodriguez Somohano, colmena (at) bambusoft.com
 #
 . /etc/colmena/colmena.cfg
 . /usr/share/colmena/functions.sh
@@ -52,6 +52,9 @@ echo "# List: [BL]" | tee -a $COLMENA_LOG_FILE
 if [ -f "$AUTH_LOG" ]; then
 	grep "Unable to negotiate" $AUTH_LOG | egrep -v "sudo" | sed -e 's@^.*with\s@@g' | sed -e 's@ port.*$@@g' | sort -u
 	egrep "(Did not receive|Invalid user)" $AUTH_LOG | egrep -v "sudo" | sed -e 's@^.*from @@g' | sed -e 's@ port.*$@@g' | sort -u
-else
-	echo "$AUTH_LOG file not found" >> $COLMENA_LOG_FILE
+fi
+echo "# List: [WL]" | tee -a $COLMENA_LOG_FILE
+if [ -f "$AUTH_LOG" ]; then
+	# Authenticated users (sshd)
+	grep "Accepted" $AUTH_LOG | egrep -v sudo | sed -e 's@.*from @@g' | sed -e 's@ port.*$@@g' | sort -u
 fi

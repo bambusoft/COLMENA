@@ -1,30 +1,32 @@
 #!/usr/bin/env node
+
 // Official COLMENA collector script
+// Colmena Propagator
 // ================================================
+// This file is part of colmena security project
+// Copyright (C) 2010-2022, Mario Rodriguez < colmena (at) bambusoft.com >
 //
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU General Public License as published by
-//  the Free Software Foundation, either version 3 of the License, or
-//  (at your option) any later version.
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License
+// as published by the Free Software Foundation, either version 3
+// of the License, or (at your option) any later version.
+
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU General Public License for more details.
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
-//  You should have received a copy of the GNU General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-//
-//  OS VERSIONS tested:
+// OS VERSIONS tested:
 //	Ubuntu 18.04 32bit and 64bit
 //	Ubuntu 20.04 64bit
 //
 //  Official website: http://colmena.bambusoft.com
-//
-//  Author Mario Rodriguez Somohano, colmena (at) bambusoft.com
-//
+
 const now=parseInt(Math.floor(Date.now() / 1000));
-const days=2;
+const days=2, maxDays=120;
 const daysInSecs=days*24*60*60;
 const maxCacheSize=30;
 const fs = require('fs');
@@ -34,11 +36,13 @@ var dbConfig={
 };
 var server={
 		id : 0,
-		ip6: '::/128'
+		ip: '::/128'
 }
 var database = null;
 var ipCache=[], iportCache=[];
-var quiet=(typeof process.argv!='undefined') ? process.argv.includes('--quit') : false;
+var ignoreIP=['127.0.0.1','::1','0.0.0.0','::','255.255.255.255'];
+var quiet=(typeof process.argv!='undefined') ? process.argv.includes('--quiet') : false;
+var debug=false;
 
 try {
 	if (fs.existsSync(dbConfig.file)) {
@@ -78,11 +82,11 @@ var readInput = function(callback){
 
 // Parse input data
 var parseInput = function(input){
-	var query="SELECT id, ip6 FROM server WHERE fqdn='"+dbConfig.fqdn+"'"; // Must be just one server
+	var query="SELECT id, ip4, ip6 FROM server WHERE fqdn='"+dbConfig.fqdn+"'"; // Must be just one server
 	database.query(query).then(function (rows) {
 		if (typeof rows[0]!='undefined') {
 			server.id=rows[0].id;
-			server.ip6=rows[0].ip6;
+			server.ip=(typeof rows[0].ip6!='undefined' && rows[0].ip6!='' && rows[0].ip6!=null) ? rows[0].ip6 : rows[0].ip4;
 			var par=[];
 			var trigger={};
 			var list=null;
@@ -120,7 +124,7 @@ var parseInput = function(input){
 									}
 									if (lrow!=null) {
 										if (lrow.ip!=null) par.push(store(lrow));
-										else console.log ('* ERROR: Trying to store null ip: '+line);
+										else if (debug) console.log ('* ERROR: Trying to store null ip: '+line);
 									}
 								}
 								Promise.all(par).then(
@@ -172,87 +176,105 @@ function store(r) {
 			msg:'Unknown error',
 		}
 		if ( (r.type==4) || (r.type==6) ) {
-			var sql;
-			if (!ipCache.includes(r.ip)) {
-				// ip_fw_list
-				sql="INSERT INTO ip_fw_list (ip, list, last, events, firstActivityDate, lastActivityDate, blockDays, propagated, src_ip6)";
-				sql+=" VALUES ('"+r.ip+"', '"+r.list+"', 'UK', 1, "+now+", "+now+", "+days+", 0, '"+server.ip6+"')";
-				sql+=" ON DUPLICATE KEY UPDATE";
-				sql+=" lastActivityDate = CASE WHEN (("+now+"-lastActivityDate)>"+daysInSecs+") THEN "+now+" ELSE lastActivityDate END,";
-				sql+=" events = CASE WHEN (("+now+"-lastActivityDate)>"+daysInSecs+") THEN events+1 ELSE events END,";
-				sql+=" last = CASE WHEN (("+now+"-lastActivityDate)>"+daysInSecs+") THEN list ELSE last END,";
-				sql+=" list = CASE WHEN (("+now+"-lastActivityDate)>"+daysInSecs+") THEN '"+r.list+"' ELSE list END,";
-				sql+=" blockDays=POWER(2,events)";
-				database.query(sql).then(function (rows) {
-					// ip_trigger
-					sql="INSERT INTO ip_trigger (ip, trigger_id, events, lastUpdate)";
-					sql+=" VALUES ('"+r.ip+"', "+r.trigger.id+", 1, "+now+")";
+			if (ignoreIP.indexOf(r.ip)==-1) {
+				var sql;
+				if (!ipCache.includes(r.ip)) {
+					var hostname='NULL';
+					var blackListed=(r.list=='BL') ? 1 : 0;
+					var greyListed=(r.list=='GL') ? 1 : 0;
+					var whiteListed=(r.list=='WL') ? 1 : 0;
+					var timeWindow=daysInSecs;
+					// ip_fw_list, update if timewindow is reached or list update for GL/WL
+					sql="INSERT INTO ip_fw_list (ip, list, last, blackListed, greyListed, whiteListed, events, firstActivityDate, lastActivityDate, hostname, blockDays, propagated, src_ip, origin_ip)";
+					sql+=" VALUES ('"+r.ip+"', '"+r.list+"', 'UK', "+blackListed+", "+greyListed+", "+whiteListed+", 1, "+now+", "+now+", "+hostname+","+days+", 0, '"+server.ip+"', '"+server.ip+"')";
 					sql+=" ON DUPLICATE KEY UPDATE";
-					sql+=" lastUpdate = CASE WHEN (("+now+"-lastUpdate)>"+daysInSecs+") THEN "+now+" ELSE lastUpdate END,";
-					sql+=" events = CASE WHEN (("+now+"-lastUpdate)>"+daysInSecs+") THEN events+1 ELSE events END";
+					sql+=" lastActivityDate = CASE WHEN ((list='"+r.list+"') OR (list='BL')) THEN lastActivityDate ELSE 0 END,";
+					sql+=" events = CASE WHEN (("+now+"-lastActivityDate)>"+timeWindow+") THEN events+1 ELSE events END,";
+					sql+=" last = CASE WHEN ((("+now+"-lastActivityDate)>"+timeWindow+") AND listBlocked=0) THEN list ELSE last END,";
+					sql+=" list = CASE WHEN ((("+now+"-lastActivityDate)>"+timeWindow+") AND listBlocked=0) THEN '"+r.list+"' ELSE list END,";
+					sql+=" blackListed = CASE WHEN (("+now+"-lastActivityDate)>"+timeWindow+" AND list='BL') THEN blackListed+1 ELSE blackListed END,";
+					sql+=" greyListed = CASE WHEN (("+now+"-lastActivityDate)>"+timeWindow+" AND list='GL') THEN greyListed+1 ELSE greyListed END,";
+					sql+=" whiteListed = CASE WHEN (("+now+"-lastActivityDate)>"+timeWindow+" AND list='WL') THEN whiteListed+1 ELSE whiteListed END,";
+					sql+=" lastActivityDate = CASE WHEN (("+now+"-lastActivityDate)>"+timeWindow+") THEN "+now+" ELSE lastActivityDate END,";
+					sql+=" hostname = "+hostname+",";
+					sql+=" propagated=0,";
+					sql+=" src_ip='"+server.ip+"',";
+					sql+=" blockDays= CASE WHEN (blockDays<"+maxDays+") THEN POWER(2,blackListed)+greyListed ELSE 120 END";
 					database.query(sql).then(function (rows) {
-						if (r.port>0) {
-							var iport=r.ip+'-'+r.port;
-							if (!iportCache.includes(iport)) {
-								// port
-								sql="INSERT INTO port (id) VALUES ("+r.port+")";
-								sql+=" ON DUPLICATE KEY UPDATE id=id"; // Avoid INSERT IGNORE for other kind of errors
-								database.query(sql).then(function (rows) {
-										var sql2="INSERT INTO ip_port (ip, port, lastUpdate, events)";
-										sql2+=" VALUES('"+r.ip+"',"+r.port+","+now+", 1)";
-										sql2+=" ON DUPLICATE KEY UPDATE";
-										sql2+=" lastUpdate = CASE WHEN (("+now+"-lastUpdate)>"+daysInSecs+") THEN "+now+" ELSE lastUpdate END,";
-										sql2+=" events = CASE WHEN (("+now+"-lastUpdate)>"+daysInSecs+") THEN events+1 ELSE events END";
-										database.query(sql2).then(function(rows) {
-											var sql3="INSERT INTO server_port (server, port, lastUpdate, events)";
-											sql3+=" VALUES ("+server.id+","+r.port+", "+now+", 1)";
-											sql3+=" ON DUPLICATE KEY UPDATE";
-											sql3+=" lastUpdate = CASE WHEN (("+now+"-lastUpdate)>"+daysInSecs+") THEN "+now+" ELSE lastUpdate END,";
-											sql3+=" events = CASE WHEN (("+now+"-lastUpdate)>"+daysInSecs+") THEN events+1 ELSE events END";
-											database.query(sql3).then(function (rows) {
-												result.flag=true;
-												result.msg='Server-Port stored';
-												resolve(result);															
-											}).catch(function (err) {
+						// ip_trigger
+						sql="INSERT INTO ip_trigger (ip, trigger_id, events, lastUpdate)";
+						sql+=" VALUES ('"+r.ip+"', "+r.trigger.id+", 1, "+now+")";
+						sql+=" ON DUPLICATE KEY UPDATE";
+						sql+=" events = CASE WHEN (("+now+"-lastUpdate)>"+timeWindow+") THEN events+1 ELSE events END,";
+						sql+=" lastUpdate = CASE WHEN (("+now+"-lastUpdate)>"+timeWindow+") THEN "+now+" ELSE lastUpdate END";
+						database.query(sql).then(function (rows) {
+							if (r.port>0) {
+								var iport=r.ip+'-'+r.port;
+								if (!iportCache.includes(iport)) {
+									// port
+									sql="INSERT INTO port (id) VALUES ("+r.port+")";
+									sql+=" ON DUPLICATE KEY UPDATE id=id"; // Avoid INSERT IGNORE for other kind of errors
+									database.query(sql).then(function (rows) {
+											var sql2="INSERT INTO ip_port (ip, port, lastUpdate, events)";
+											sql2+=" VALUES('"+r.ip+"',"+r.port+","+now+", 1)";
+											sql2+=" ON DUPLICATE KEY UPDATE";
+											sql2+=" events = CASE WHEN (("+now+"-lastUpdate)>"+timeWindow+") THEN events+1 ELSE events END,";
+											sql2+=" lastUpdate = CASE WHEN (("+now+"-lastUpdate)>"+timeWindow+") THEN "+now+" ELSE lastUpdate END";
+											database.query(sql2).then(function(rows) {
+												var sql3="INSERT INTO server_port (server, port, lastUpdate, events)";
+												sql3+=" VALUES ("+server.id+","+r.port+", "+now+", 1)";
+												sql3+=" ON DUPLICATE KEY UPDATE";
+												sql3+=" events = CASE WHEN (("+now+"-lastUpdate)>"+timeWindow+") THEN events+1 ELSE events END,";
+												sql3+=" lastUpdate = CASE WHEN (("+now+"-lastUpdate)>"+timeWindow+") THEN "+now+" ELSE lastUpdate END";
+												database.query(sql3).then(function (rows) {
+													result.flag=true;
+													result.msg='Server-Port stored';
+													resolve(result);															
+												}).catch(function (err) {
+													result.flag=false;
+													result.msg='DB1 err: '+err.toString();
+													reject(result);
+												});
+											}).catch(function(err) {
 												result.flag=false;
-												result.msg='DB1 err: '+err.toString();
-												reject(result);
+												result.msg='DB3 err: '+err.toString();
+												reject(result);											
 											});
-										}).catch(function(err) {
-											result.flag=false;
-											result.msg='DB3 err: '+err.toString();
-											reject(result);											
-										});
-								}).catch (function(err) {
-									result.flag=false;
-									result.msg='DB4 err: '+err.toString();
-									reject(result);
-								});
-								if (iportCache.push(iport)>maxCacheSize) iportCache.shift();
+									}).catch (function(err) {
+										result.flag=false;
+										result.msg='DB4 err: '+err.toString();
+										reject(result);
+									});
+									if (iportCache.push(iport)>maxCacheSize) iportCache.shift();
+								} else {
+									result.flag=true;
+									result.msg='Previously processed port, cache hit';
+									resolve(result);
+								}
 							} else {
 								result.flag=true;
-								result.msg='Previously processed port, cache hit';
+								result.msg='Processed IP without port';
 								resolve(result);
 							}
-						} else {
-							result.flag=true;
-							result.msg='Processed IP without port';
-							resolve(result);
-						}
+						}).catch(function (err) {
+							result.flag=false;
+							result.msg='DB5 err: '+err.toString();
+							reject(result);
+						});
 					}).catch(function (err) {
 						result.flag=false;
-						result.msg='DB5 err: '+err.toString();
+						result.msg='DB6 err: '+err.toString();
 						reject(result);
 					});
-				}).catch(function (err) {
+					if (ipCache.push(r.ip)>maxCacheSize) ipCache.shift();
+				} else {
 					result.flag=false;
-					result.msg='DB6 err: '+err.toString();
-					reject(result);
-				});
-				if (ipCache.push(r.ip)>maxCacheSize) ipCache.shift();
+					result.msg='Previously processed IP, cache hit';
+					resolve(result);
+				}
 			} else {
 				result.flag=false;
-				result.msg='Previously processed IP, cache hit';
+				result.msg='Restricted IP';
 				resolve(result);
 			}
 		} else {
@@ -272,6 +294,11 @@ function lineType(str) {
 	const ipRegex = require('ip-regex');
 	if (ipRegex.v4().test(str)) result=4;
 	if (ipRegex.v6().test(str)) result=6;
+	/*
+	import ipRegex from 'ip-regex';
+	if (ipRegex({exact: true}).test(str)) result=4;
+	if (ipRegex.v6({exact: true}).test(str)) result=6;
+	*/
 	return result;
 }
 
